@@ -33,10 +33,13 @@ bot.setMyCommands([
     { command: 'settings', description: 'Adjust search radius and preferences' }
 ]);
 
-// Updated API endpoints
+// Updated API endpoints - trying multiple possible endpoints
 const API_ENDPOINTS = {
     primary: 'https://datamall2.mytransport.sg/ltaodataservice',
-    fallback: 'http://datamall2.mytransport.sg/ltaodataservice'
+    secondary: 'http://datamall2.mytransport.sg/ltaodataservice',
+    // Alternative endpoints that might be working
+    alternative1: 'https://api.datamall.lta.gov.sg/ltaodataservice',
+    alternative2: 'http://api.datamall.lta.gov.sg/ltaodataservice'
 };
 
 // Updated configuration - increased search radius to 200m
@@ -101,40 +104,60 @@ const formatLoad = (load) => {
 
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-// Test API connectivity
+// Test API connectivity with comprehensive testing
 const testAPIConnection = async () => {
     console.log('🧪 Testing API connectivity...');
     
     for (const [name, baseUrl] of Object.entries(API_ENDPOINTS)) {
-        try {
-            console.log(`   Testing ${name}: ${baseUrl}`);
-            
-            const response = await axios.get(`${baseUrl}/BusStops`, {
-                headers: {
-                    'AccountKey': LTA_API_KEY,
-                    'accept': 'application/json'
-                },
-                params: {
-                    '$skip': 0,
-                    '$top': 1
-                },
-                timeout: REQUEST_TIMEOUT
-            });
-            
-            if (response.data && response.data.value) {
-                console.log(`   ✅ ${name} endpoint working! Got ${response.data.value.length} record(s)`);
-                return baseUrl;
+        console.log(`   Testing ${name}: ${baseUrl}`);
+        
+        // Test different endpoints that might be available
+        const testEndpoints = ['BusStops', 'BusServices', 'BusRoutes'];
+        
+        for (const testEndpoint of testEndpoints) {
+            try {
+                console.log(`   🔍 Testing endpoint: ${testEndpoint}`);
+                
+                // Try different authentication methods
+                const authMethods = [
+                    { 'AccountKey': LTA_API_KEY, 'accept': 'application/json' },
+                    { 'Authorization': `Bearer ${LTA_API_KEY}`, 'accept': 'application/json' },
+                    { 'X-API-Key': LTA_API_KEY, 'accept': 'application/json' }
+                ];
+                
+                for (const [authIndex, headers] of authMethods.entries()) {
+                    try {
+                        const response = await axios.get(`${baseUrl}/${testEndpoint}`, {
+                            headers,
+                            params: {
+                                '$skip': 0,
+                                '$top': 1
+                            },
+                            timeout: REQUEST_TIMEOUT
+                        });
+                        
+                        if (response.data && (response.data.value || response.data.length > 0)) {
+                            console.log(`   ✅ ${name} endpoint working with ${testEndpoint}! Auth method: ${authIndex + 1}`);
+                            console.log(`   📊 Response structure:`, Object.keys(response.data));
+                            return baseUrl;
+                        }
+                        
+                    } catch (authError) {
+                        console.log(`   ⚠️ Auth method ${authIndex + 1} failed for ${testEndpoint}:`, authError.response?.status);
+                    }
+                }
+                
+            } catch (error) {
+                console.log(`   ❌ ${testEndpoint} failed:`, error.response?.status, error.response?.statusText || error.message);
             }
-            
-        } catch (error) {
-            console.log(`   ❌ ${name} failed:`, error.response?.status, error.response?.statusText || error.message);
         }
     }
     
+    console.log('❌ All API endpoints and authentication methods failed');
     return null;
 };
 
-// Enhanced API request function
+// Enhanced API request function with multiple authentication methods
 const makeAPIRequest = async (endpoint, params = {}, retries = 3) => {
     if (!WORKING_API_ENDPOINT) {
         throw new Error('No working API endpoint available');
@@ -142,28 +165,67 @@ const makeAPIRequest = async (endpoint, params = {}, retries = 3) => {
     
     const url = `${WORKING_API_ENDPOINT}/${endpoint}`;
     console.log(`🌐 Making API request to: ${url}`);
+    console.log(`📋 Parameters:`, params);
+    
+    // Try different authentication header formats
+    const authHeaders = [
+        {
+            'AccountKey': LTA_API_KEY,
+            'accept': 'application/json',
+            'User-Agent': 'Singapore-Bus-Bot/3.0'
+        },
+        {
+            'Authorization': `Bearer ${LTA_API_KEY}`,
+            'accept': 'application/json',
+            'User-Agent': 'Singapore-Bus-Bot/3.0'
+        },
+        {
+            'X-API-Key': LTA_API_KEY,
+            'accept': 'application/json',
+            'User-Agent': 'Singapore-Bus-Bot/3.0'
+        },
+        {
+            'AccountKey': LTA_API_KEY,
+            'accept': 'application/json',
+            'Content-Type': 'application/json',
+            'User-Agent': 'Singapore-Bus-Bot/3.0'
+        }
+    ];
     
     for (let attempt = 1; attempt <= retries + 1; attempt++) {
+        // Try different header formats on different attempts
+        const headerIndex = (attempt - 1) % authHeaders.length;
+        const headers = authHeaders[headerIndex];
+        
         try {
+            console.log(`🔑 Attempt ${attempt} using header format ${headerIndex + 1}`);
+            
             const response = await axios.get(url, {
-                headers: {
-                    'AccountKey': LTA_API_KEY,
-                    'accept': 'application/json',
-                    'User-Agent': 'Singapore-Bus-Bot/3.0'
-                },
+                headers,
                 params,
                 timeout: REQUEST_TIMEOUT
             });
             
-            console.log(`✅ API request successful (attempt ${attempt})`);
+            console.log(`✅ API request successful (attempt ${attempt}, header format ${headerIndex + 1})`);
             return response.data;
             
         } catch (error) {
             console.error(`❌ API request attempt ${attempt} failed:`, {
                 status: error.response?.status,
                 statusText: error.response?.statusText,
-                message: error.message
+                message: error.message,
+                url: url,
+                headerFormat: headerIndex + 1
             });
+            
+            // Log detailed response for debugging
+            if (error.response) {
+                console.log(`📊 Response details:`, {
+                    status: error.response.status,
+                    headers: error.response.headers,
+                    data: error.response.data
+                });
+            }
             
             if (attempt <= retries) {
                 const delay = Math.pow(2, attempt) * 1000;
@@ -176,53 +238,65 @@ const makeAPIRequest = async (endpoint, params = {}, retries = 3) => {
     }
 };
 
-// Get all bus stops
+// Get all bus stops with enhanced error handling
 const getAllBusStops = async () => {
     console.log('🚌 Fetching bus stops data...');
     
-    try {
-        let allBusStops = [];
-        let skip = 0;
-        const limit = 500;
-        let totalRequests = 0;
+    // Try different endpoint variations
+    const busStopEndpoints = ['BusStops', 'BusStop', 'bus-stops'];
+    
+    for (const endpoint of busStopEndpoints) {
+        try {
+            console.log(`   🔍 Trying bus stops endpoint: ${endpoint}`);
+            
+            let allBusStops = [];
+            let skip = 0;
+            const limit = 500;
+            let totalRequests = 0;
 
-        while (true) {
-            totalRequests++;
-            console.log(`📡 Request ${totalRequests}: fetching ${limit} records (skip: ${skip})`);
-            
-            const data = await makeAPIRequest('BusStops', { '$skip': skip });
-            
-            const busStops = data.value;
-            if (!busStops || busStops.length === 0) {
-                console.log('✅ No more bus stops to fetch');
-                break;
+            while (true) {
+                totalRequests++;
+                console.log(`📡 Request ${totalRequests}: fetching ${limit} records (skip: ${skip}) from ${endpoint}`);
+                
+                const data = await makeAPIRequest(endpoint, { '$skip': skip, '$top': limit });
+                
+                const busStops = data.value || data.data || data;
+                if (!busStops || busStops.length === 0) {
+                    console.log('✅ No more bus stops to fetch');
+                    break;
+                }
+
+                allBusStops = allBusStops.concat(busStops);
+                console.log(`📊 Progress: ${allBusStops.length} bus stops loaded`);
+                
+                skip += limit;
+
+                if (busStops.length === limit) {
+                    await sleep(200);
+                }
+                
+                if (totalRequests > 30) {
+                    console.log('⚠️ Safety limit reached, stopping fetch');
+                    break;
+                }
             }
 
-            allBusStops = allBusStops.concat(busStops);
-            console.log(`📊 Progress: ${allBusStops.length} bus stops loaded`);
-            
-            skip += limit;
-
-            if (busStops.length === limit) {
-                await sleep(200);
+            if (allBusStops.length > 0) {
+                busStopsCache.data = allBusStops;
+                busStopsCache.lastUpdated = Date.now();
+                
+                console.log(`✅ Successfully loaded ${allBusStops.length} bus stops using ${endpoint}`);
+                return allBusStops;
             }
             
-            if (totalRequests > 30) {
-                console.log('⚠️ Safety limit reached, stopping fetch');
-                break;
-            }
+        } catch (error) {
+            console.error(`❌ Error with ${endpoint}:`, error.message);
+            continue; // Try next endpoint
         }
-
-        busStopsCache.data = allBusStops;
-        busStopsCache.lastUpdated = Date.now();
-        
-        console.log(`✅ Successfully loaded ${allBusStops.length} bus stops`);
-        return allBusStops;
-        
-    } catch (error) {
-        console.error('❌ Error fetching bus stops:', error.message);
-        return busStopsCache.data;
     }
+    
+    console.error('❌ All bus stop endpoints failed');
+    return busStopsCache.data; // Return cached data if available
 };
 
 const findNearbyBusStops = (userLat, userLng, busStops, radiusMeters = SEARCH_RADIUS) => {
@@ -249,14 +323,26 @@ const findNearbyBusStops = (userLat, userLng, busStops, radiusMeters = SEARCH_RA
 const getBusArrivals = async (busStopCode) => {
     console.log(`🚌 Getting arrivals for bus stop: ${busStopCode}`);
     
-    try {
-        const data = await makeAPIRequest('BusArrivalv2', { 'BusStopCode': busStopCode });
-        console.log(`✅ Got arrival data for ${busStopCode}: ${data.Services?.length || 0} services`);
-        return data;
-    } catch (error) {
-        console.error(`❌ Error fetching arrivals for ${busStopCode}:`, error.message);
-        return null;
+    // Try different endpoint variations for bus arrivals
+    const arrivalEndpoints = ['BusArrivalv2', 'BusArrival', 'bus-arrival'];
+    
+    for (const endpoint of arrivalEndpoints) {
+        try {
+            console.log(`   🔍 Trying endpoint: ${endpoint}`);
+            const data = await makeAPIRequest(endpoint, { 'BusStopCode': busStopCode });
+            
+            if (data && (data.Services || data.services || data.BusStopCode)) {
+                console.log(`✅ Got arrival data for ${busStopCode} using ${endpoint}: ${data.Services?.length || data.services?.length || 0} services`);
+                return data;
+            }
+        } catch (error) {
+            console.error(`❌ Error with ${endpoint} for ${busStopCode}:`, error.response?.status, error.message);
+            continue; // Try next endpoint
+        }
     }
+    
+    console.error(`❌ All arrival endpoints failed for ${busStopCode}`);
+    return null;
 };
 
 // Enhanced message formatting - combine multiple bus stops
