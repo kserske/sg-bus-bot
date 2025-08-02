@@ -28,6 +28,7 @@ bot.setMyCommands([
     { command: 'help', description: 'Show help and usage instructions' },
     { command: 'location', description: 'Share location to find nearby bus stops' },
     { command: 'search', description: 'Search by typing address or place name' },
+    { command: 'busstop', description: 'Search by bus stop number (e.g. 01012)' },
     { command: 'settings', description: 'Adjust search radius and preferences' }
 ]);
 
@@ -330,7 +331,62 @@ const getBusArrivals = async (busStopCode) => {
     }
 };
 
-// Enhanced message formatting with better real-time data handling
+// Function to format bus arrivals for a single bus stop
+const formatSingleBusStopMessage = async (busStopCode, busStopName = null) => {
+    try {
+        const arrivalsData = await getBusArrivals(busStopCode);
+        
+        if (!arrivalsData || !arrivalsData.Services || arrivalsData.Services.length === 0) {
+            return `🚏 *Bus Stop ${busStopCode}*${busStopName ? `\n📍 ${busStopName}` : ''}\n\n❌ No buses currently serving this stop`;
+        }
+
+        let message = `🚏 *Bus Stop ${busStopCode}*${busStopName ? `\n📍 ${busStopName}` : ''}\n\n`;
+
+        // Filter out services with no real arrival data
+        const validServices = arrivalsData.Services.filter(service => {
+            return service.NextBus && 
+                   service.NextBus.EstimatedArrival && 
+                   service.NextBus.EstimatedArrival !== '' &&
+                   service.NextBus.Monitored !== undefined;
+        });
+        
+        if (validServices.length === 0) {
+            message += `⏰ No real-time arrivals available`;
+        } else {
+            const sortedServices = validServices.sort((a, b) => {
+                const numA = parseInt(a.ServiceNo) || 999;
+                const numB = parseInt(b.ServiceNo) || 999;
+                return numA - numB;
+            });
+
+            sortedServices.forEach(service => {
+                const busNumber = service.ServiceNo;
+                const nextBus = formatArrivalTime(service.NextBus?.EstimatedArrival);
+                const nextBus2 = formatArrivalTime(service.NextBus2?.EstimatedArrival);
+                
+                const load1 = formatLoad(service.NextBus?.Load);
+                const load2 = formatLoad(service.NextBus2?.Load);
+
+                if (nextBus !== 'No data') {
+                    message += `🚍 ${busNumber}: ${load1} ${nextBus}`;
+                    if (nextBus2 !== 'No data') {
+                        message += ` • ${load2} ${nextBus2}`;
+                    }
+                    message += '\n';
+                }
+            });
+        }
+
+        message += '\n🟢 Seats Available • 🟡 Standing • 🔴 Limited Standing';
+        message += `\n\n🔄 Last updated: ${new Date().toLocaleTimeString('en-SG', { timeZone: 'Asia/Singapore' })}`;
+        
+        return message;
+        
+    } catch (error) {
+        console.error(`Error getting arrivals for ${busStopCode}:`, error);
+        return `🚏 *Bus Stop ${busStopCode}*\n\n❌ Error loading arrivals (API issue)`;
+    }
+};
 const formatCombinedBusArrivalsMessage = async (nearbyStops) => {
     let combinedMessage = `🚌 *Bus Arrivals (${nearbyStops.length} stops within ${SEARCH_RADIUS}m)*\n\n`;
     
@@ -568,8 +624,9 @@ const geocodeAddress = async (address) => {
 const createMainKeyboard = () => ({
     keyboard: [
         [{ text: '📍 Share Location', request_location: true }],
-        [{ text: '🔍 Search Address' }, { text: '🔄 Refresh' }],
-        [{ text: '⚙️ Settings' }, { text: '❓ Help' }]
+        [{ text: '🔍 Search Address' }, { text: '🚏 Bus Stop Number' }],
+        [{ text: '🔄 Refresh' }, { text: '⚙️ Settings' }],
+        [{ text: '❓ Help' }]
     ],
     resize_keyboard: true,
     one_time_keyboard: false
@@ -683,6 +740,32 @@ bot.onText(/\/search/, async (msg) => {
     userSessions.set(chatId, { 
         ...userSessions.get(chatId),
         waitingForAddress: true 
+    });
+});
+
+bot.onText(/\/busstop/, async (msg) => {
+    const chatId = msg.chat.id;
+    
+    await bot.sendMessage(chatId, 
+        `🚏 *Bus Stop Number Search*\n\n` +
+        `Enter a Singapore bus stop code to get real-time arrivals.\n\n` +
+        `📝 **Examples:**\n` +
+        `• 01012 (Raffles Place)\n` +
+        `• 43009 (Orchard Boulevard)\n` +
+        `• 28009 (Marina Bay Sands)\n` +
+        `• 59009 (Changi Airport)\n\n` +
+        `💡 **Tips:**\n` +
+        `• Bus stop codes are usually 5 digits\n` +
+        `• You can find codes on physical bus stop signs\n` +
+        `• Or use OneMap.gov.sg to find codes\n\n` +
+        `**Type the bus stop number below:**`, 
+        { parse_mode: 'Markdown' }
+    );
+    
+    // Set user state for bus stop number search
+    userSessions.set(chatId, { 
+        ...userSessions.get(chatId),
+        waitingForBusStop: true 
     });
 });
 
