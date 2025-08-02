@@ -390,7 +390,7 @@ const formatCombinedBusArrivalsMessage = async (nearbyStops) => {
     }
     
     combinedMessage += '\n🟢 Seats Available • 🟡 Standing • 🔴 Limited Standing';
-    combinedMessage += `\n\n🔄 Last updated: ${new Date().toLocaleTimeString()}`;
+    combinedMessage += `\n\n🔄 Last updated: ${new Date().toLocaleTimeString('en-SG', { timeZone: 'Asia/Singapore' })}`;
     
     return combinedMessage;
 };
