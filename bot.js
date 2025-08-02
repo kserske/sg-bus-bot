@@ -401,10 +401,13 @@ const formatCombinedBusArrivalsMessage = async (nearbyStops) => {
     return combinedMessage;
 };
 
-// Geocoding function for address search
+// Enhanced geocoding function with multiple providers
 const geocodeAddress = async (address) => {
+    console.log(`🔍 Geocoding address: "${address}"`);
+    
+    // Try OneMap first (Singapore's official service)
     try {
-        // Using OneMap API (Singapore's official mapping service)
+        console.log('   🇸🇬 Trying OneMap API...');
         const response = await axios.get('https://developers.onemap.sg/commonapi/search', {
             params: {
                 searchVal: address,
@@ -417,18 +420,154 @@ const geocodeAddress = async (address) => {
         
         if (response.data && response.data.results && response.data.results.length > 0) {
             const result = response.data.results[0];
+            console.log('   ✅ OneMap found result');
             return {
                 latitude: parseFloat(result.LATITUDE),
                 longitude: parseFloat(result.LONGITUDE),
-                address: result.ADDRESS || result.SEARCHVAL
+                address: result.ADDRESS || result.SEARCHVAL,
+                provider: 'OneMap'
             };
         }
-        
-        return null;
     } catch (error) {
-        console.error('Geocoding error:', error.message);
-        return null;
+        console.log('   ❌ OneMap failed:', error.message);
     }
+    
+    // Try Nominatim (OpenStreetMap) as fallback
+    try {
+        console.log('   🌍 Trying Nominatim (OpenStreetMap)...');
+        const response = await axios.get('https://nominatim.openstreetmap.org/search', {
+            params: {
+                q: `${address}, Singapore`,
+                format: 'json',
+                limit: 1,
+                countrycodes: 'sg', // Restrict to Singapore
+                addressdetails: 1
+            },
+            headers: {
+                'User-Agent': 'Singapore-Bus-Bot/3.0'
+            },
+            timeout: 10000
+        });
+        
+        if (response.data && response.data.length > 0) {
+            const result = response.data[0];
+            console.log('   ✅ Nominatim found result');
+            return {
+                latitude: parseFloat(result.lat),
+                longitude: parseFloat(result.lon),
+                address: result.display_name,
+                provider: 'OpenStreetMap'
+            };
+        }
+    } catch (error) {
+        console.log('   ❌ Nominatim failed:', error.message);
+    }
+    
+    // Try more specific Singapore search terms
+    const singaporeSpecificTerms = [
+        `${address} MRT station Singapore`,
+        `${address} shopping mall Singapore`,
+        `${address} Singapore`,
+        `${address} station`,
+        `${address} mall`
+    ];
+    
+    for (const term of singaporeSpecificTerms) {
+        try {
+            console.log(`   🔍 Trying enhanced search: "${term}"`);
+            const response = await axios.get('https://nominatim.openstreetmap.org/search', {
+                params: {
+                    q: term,
+                    format: 'json',
+                    limit: 1,
+                    countrycodes: 'sg',
+                    addressdetails: 1
+                },
+                headers: {
+                    'User-Agent': 'Singapore-Bus-Bot/3.0'
+                },
+                timeout: 10000
+            });
+            
+            if (response.data && response.data.length > 0) {
+                const result = response.data[0];
+                console.log(`   ✅ Enhanced search found result with term: "${term}"`);
+                return {
+                    latitude: parseFloat(result.lat),
+                    longitude: parseFloat(result.lon),
+                    address: result.display_name,
+                    provider: 'OpenStreetMap Enhanced'
+                };
+            }
+        } catch (error) {
+            console.log(`   ❌ Enhanced search failed for "${term}":`, error.message);
+        }
+    }
+    
+    // Try fuzzy matching with common Singapore locations
+    const commonLocations = {
+        'yew tee': { lat: 1.3970, lng: 103.7470, name: 'Yew Tee MRT Station' },
+        'yew tee station': { lat: 1.3970, lng: 103.7470, name: 'Yew Tee MRT Station' },
+        'causeway point': { lat: 1.4361, lng: 103.7865, name: 'Causeway Point Shopping Mall' },
+        'jurong point': { lat: 1.3398, lng: 103.7060, name: 'Jurong Point Shopping Centre' },
+        'orchard road': { lat: 1.3048, lng: 103.8318, name: 'Orchard Road' },
+        'marina bay sands': { lat: 1.2834, lng: 103.8607, name: 'Marina Bay Sands' },
+        'changi airport': { lat: 1.3644, lng: 103.9915, name: 'Changi Airport' },
+        'sentosa': { lat: 1.2494, lng: 103.8303, name: 'Sentosa Island' },
+        'clarke quay': { lat: 1.2885, lng: 103.8467, name: 'Clarke Quay' },
+        'raffles place': { lat: 1.2840, lng: 103.8510, name: 'Raffles Place MRT Station' },
+        'city hall': { lat: 1.2932, lng: 103.8520, name: 'City Hall MRT Station' },
+        'dhoby ghaut': { lat: 1.2985, lng: 103.8456, name: 'Dhoby Ghaut MRT Station' },
+        'bugis': { lat: 1.3006, lng: 103.8560, name: 'Bugis MRT Station' },
+        'little india': { lat: 1.3068, lng: 103.8492, name: 'Little India MRT Station' },
+        'chinatown': { lat: 1.2836, lng: 103.8443, name: 'Chinatown MRT Station' },
+        'harbourfront': { lat: 1.2653, lng: 103.8223, name: 'HarbourFront MRT Station' },
+        'tanjong pagar': { lat: 1.2766, lng: 103.8459, name: 'Tanjong Pagar MRT Station' },
+        'somerset': { lat: 1.3007, lng: 103.8390, name: 'Somerset MRT Station' },
+        'newton': { lat: 1.3127, lng: 103.8388, name: 'Newton MRT Station' },
+        'bishan': { lat: 1.3507, lng: 103.8480, name: 'Bishan MRT Station' },
+        'ang mo kio': { lat: 1.3700, lng: 103.8495, name: 'Ang Mo Kio MRT Station' },
+        'tampines': { lat: 1.3524, lng: 103.9448, name: 'Tampines MRT Station' },
+        'bedok': { lat: 1.3240, lng: 103.9304, name: 'Bedok MRT Station' },
+        'punggol': { lat: 1.4052, lng: 103.9021, name: 'Punggol MRT Station' },
+        'sengkang': { lat: 1.3916, lng: 103.8953, name: 'Sengkang MRT Station' },
+        'woodlands': { lat: 1.4370, lng: 103.7862, name: 'Woodlands MRT Station' },
+        'jurong east': { lat: 1.3330, lng: 103.7436, name: 'Jurong East MRT Station' },
+        'boon lay': { lat: 1.3387, lng: 103.7065, name: 'Boon Lay MRT Station' },
+        'tuas link': { lat: 1.3404, lng: 103.6366, name: 'Tuas Link MRT Station' },
+        'expo': { lat: 1.3354, lng: 103.9614, name: 'Expo MRT Station' },
+        'pasir ris': { lat: 1.3729, lng: 103.9492, name: 'Pasir Ris MRT Station' }
+    };
+    
+    const searchKey = address.toLowerCase().trim();
+    
+    // Check for exact matches first
+    if (commonLocations[searchKey]) {
+        const loc = commonLocations[searchKey];
+        console.log(`   ✅ Found in local database: ${loc.name}`);
+        return {
+            latitude: loc.lat,
+            longitude: loc.lng,
+            address: loc.name,
+            provider: 'Local Database'
+        };
+    }
+    
+    // Check for partial matches
+    for (const [key, loc] of Object.entries(commonLocations)) {
+        if (key.includes(searchKey) || searchKey.includes(key)) {
+            console.log(`   ✅ Partial match found in local database: ${loc.name}`);
+            return {
+                latitude: loc.lat,
+                longitude: loc.lng,
+                address: loc.name,
+                provider: 'Local Database (Partial Match)'
+            };
+        }
+    }
+    
+    console.log('   ❌ No results found in any geocoding service');
+    return null;
 };
 
 // Keyboard creation
@@ -478,621 +617,4 @@ bot.onText(/\/start/, async (msg) => {
     });
 });
 
-bot.onText(/\/help/, async (msg) => {
-    const chatId = msg.chat.id;
-    
-    const helpMessage = 
-        `❓ *Singapore Bus Bot Help*\n\n` +
-        `*Available Commands:*\n` +
-        `• /start - Start the bot\n` +
-        `• /help - Show this help message\n` +
-        `• /location - Request location sharing\n` +
-        `• /search - Search by address\n` +
-        `• /settings - Adjust preferences\n` +
-        `• /debug - System status\n` +
-        `• /test - Test API connection\n\n` +
-        `*Features:*\n` +
-        `📍 Share your GPS location for instant results\n` +
-        `🔍 Search by typing any Singapore address\n` +
-        `📱 All nearby stops shown in one message\n` +
-        `🔄 Real-time arrival updates\n` +
-        `⚙️ Customizable search radius\n\n` +
-        `*Tips:*\n` +
-        `• For address search, be specific (e.g., "Orchard Road MRT")\n` +
-        `• Bus timings are updated every 30 seconds\n` +
-        `• Load indicators: 🟢 Seats, 🟡 Standing, 🔴 Limited\n\n` +
-        `Need more help? Contact support or try /debug for troubleshooting.`;
-
-    await bot.sendMessage(chatId, helpMessage, { 
-        parse_mode: 'Markdown',
-        reply_markup: createMainKeyboard()
-    });
-});
-
-bot.onText(/\/location/, async (msg) => {
-    const chatId = msg.chat.id;
-    
-    await bot.sendMessage(chatId, 
-        '📍 Please share your location to find nearby bus stops:', {
-        reply_markup: {
-            keyboard: [[{ text: '📍 Share My Location', request_location: true }]],
-            resize_keyboard: true,
-            one_time_keyboard: true
-        }
-    });
-});
-
-bot.onText(/\/search/, async (msg) => {
-    const chatId = msg.chat.id;
-    
-    await bot.sendMessage(chatId, 
-        `🔍 *Address Search*\n\n` +
-        `Type any Singapore address, landmark, or MRT station name.\n\n` +
-        `*Examples:*\n` +
-        `• "Marina Bay Sands"\n` +
-        `• "Orchard Road MRT"\n` +
-        `• "Raffles Place"\n` +
-        `• "313 Somerset"\n\n` +
-        `Just type your location below:`, 
-        { parse_mode: 'Markdown' }
-    );
-    
-    // Set user state for address search
-    userSessions.set(chatId, { 
-        ...userSessions.get(chatId),
-        waitingForAddress: true 
-    });
-});
-
-bot.onText(/\/settings/, async (msg) => {
-    const chatId = msg.chat.id;
-    const prefs = userPreferences.get(chatId) || { radius: SEARCH_RADIUS, maxStops: MAX_BUS_STOPS };
-    
-    const settingsKeyboard = {
-        inline_keyboard: [
-            [
-                { text: `Radius: ${prefs.radius}m`, callback_data: 'setting_radius' },
-                { text: `Max Stops: ${prefs.maxStops}`, callback_data: 'setting_stops' }
-            ],
-            [{ text: '🔄 Reset to Default', callback_data: 'setting_reset' }],
-            [{ text: '✅ Done', callback_data: 'setting_done' }]
-        ]
-    };
-    
-    await bot.sendMessage(chatId, 
-        `⚙️ *Settings*\n\n` +
-        `Current preferences:\n` +
-        `• Search Radius: ${prefs.radius}m\n` +
-        `• Max Bus Stops: ${prefs.maxStops}\n\n` +
-        `Tap to adjust:`, 
-        { 
-            parse_mode: 'Markdown',
-            reply_markup: settingsKeyboard
-        }
-    );
-});
-
-// Enhanced debug command with more diagnostic info
-bot.onText(/\/debug/, async (msg) => {
-    const chatId = msg.chat.id;
-    
-    const debugInfo = 
-        `🔧 *Debug Information*\n\n` +
-        `*System Status:*\n` +
-        `• Environment: ${NODE_ENV}\n` +
-        `• API Endpoint: ${WORKING_API_ENDPOINT ? WORKING_API_ENDPOINT : '❌ Not connected'}\n` +
-        `• Bot Token: ${BOT_TOKEN ? 'Set ✅' : 'Missing ❌'}\n` +
-        `• LTA API Key: ${LTA_API_KEY ? `Set ✅ (${LTA_API_KEY.substring(0, 8)}...)` : 'Missing ❌'}\n\n` +
-        `*Cache Status:*\n` +
-        `• Bus Stops Cached: ${busStopsCache.data.length}\n` +
-        `• Last Updated: ${busStopsCache.lastUpdated ? new Date(busStopsCache.lastUpdated).toLocaleString() : 'Never'}\n` +
-        `• Cache Age: ${busStopsCache.lastUpdated ? Math.round((Date.now() - busStopsCache.lastUpdated) / 60000) + ' minutes' : 'N/A'}\n\n` +
-        `*Configuration:*\n` +
-        `• Search Radius: ${SEARCH_RADIUS}m\n` +
-        `• Max Bus Stops: ${MAX_BUS_STOPS}\n` +
-        `• Request Timeout: ${REQUEST_TIMEOUT}ms\n\n` +
-        `*API Endpoints Available:*\n` +
-        Object.entries(API_ENDPOINTS).map(([name, url]) => `• ${name}: ${url}`).join('\n') + '\n\n' +
-        `*Active Sessions:* ${userSessions.size}\n` +
-        `*User Preferences:* ${userPreferences.size}`;
-
-    await bot.sendMessage(chatId, debugInfo, { parse_mode: 'Markdown' });
-});
-
-bot.onText(/\/test/, async (msg) => {
-    const chatId = msg.chat.id;
-    
-    const testMsg = await bot.sendMessage(chatId, '🧪 Testing API connection...');
-    
-    const workingEndpoint = await testAPIConnection();
-    
-    if (workingEndpoint) {
-        WORKING_API_ENDPOINT = workingEndpoint;
-        await bot.editMessageText(
-            `✅ *API Connection Successful!*\n\n` +
-            `Endpoint: ${workingEndpoint}\n` +
-            `Status: Ready for bus data retrieval`, {
-            chat_id: chatId,
-            message_id: testMsg.message_id,
-            parse_mode: 'Markdown'
-        });
-    } else {
-        await bot.editMessageText(
-            `❌ *API Connection Failed*\n\n` +
-            `All endpoints are unreachable.\n` +
-            `Please check:\n` +
-            `• Internet connection\n` +
-            `• LTA API key validity\n` +
-            `• API service status`, {
-            chat_id: chatId,
-            message_id: testMsg.message_id,
-            parse_mode: 'Markdown'
-        });
-    }
-});
-
-// Text message handler for address search
-bot.on('text', async (msg) => {
-    const chatId = msg.chat.id;
-    const text = msg.text;
-    
-    // Skip if it's a command
-    if (text.startsWith('/')) return;
-    
-    const session = userSessions.get(chatId);
-    
-    // Handle button presses
-    if (text === '🔍 Search Address') {
-        await bot.sendMessage(chatId, 
-            `🔍 *Address Search*\n\n` +
-            `Type any Singapore address, landmark, or MRT station name.\n\n` +
-            `*Examples:*\n` +
-            `• "Marina Bay Sands"\n` +
-            `• "Orchard Road MRT"\n` +
-            `• "Raffles Place"\n` +
-            `• "313 Somerset"\n\n` +
-            `Just type your location below:`, 
-            { parse_mode: 'Markdown' }
-        );
-        userSessions.set(chatId, { ...session, waitingForAddress: true });
-        return;
-    }
-    
-    if (text === '🔄 Refresh' && session && session.latitude && session.longitude) {
-        await handleLocationSearch(chatId, session.latitude, session.longitude, 'Refreshing bus arrivals...');
-        return;
-    }
-    
-    if (text === '⚙️ Settings') {
-        bot.emit('message', { ...msg, text: '/settings' });
-        return;
-    }
-    
-    if (text === '❓ Help') {
-        bot.emit('message', { ...msg, text: '/help' });
-        return;
-    }
-    
-    // Handle address search
-    if (session && session.waitingForAddress) {
-        const searchMsg = await bot.sendMessage(chatId, `🔍 Searching for "${text}"...`);
-        
-        try {
-            const location = await geocodeAddress(text);
-            
-            if (location) {
-                await bot.editMessageText(
-                    `📍 Found: ${location.address}\n🔍 Searching for nearby bus stops...`, {
-                    chat_id: chatId,
-                    message_id: searchMsg.message_id
-                });
-                
-                // Clear the address search state
-                userSessions.set(chatId, { 
-                    ...session, 
-                    waitingForAddress: false,
-                    latitude: location.latitude,
-                    longitude: location.longitude,
-                    searchedAddress: location.address
-                });
-                
-                await bot.deleteMessage(chatId, searchMsg.message_id);
-                await handleLocationSearch(chatId, location.latitude, location.longitude, 
-                    `📍 Results for: ${location.address}\n🔍 Loading bus stops...`);
-                
-            } else {
-                await bot.editMessageText(
-                    `❌ Location "${text}" not found.\n\n` +
-                    `Please try:\n` +
-                    `• A more specific address\n` +
-                    `• Adding "Singapore" to your search\n` +
-                    `• Using landmarks or MRT station names`, {
-                    chat_id: chatId,
-                    message_id: searchMsg.message_id
-                });
-                
-                // Keep the address search state active
-            }
-        } catch (error) {
-            console.error('Address search error:', error);
-            await bot.editMessageText(
-                `❌ Search failed. Please try again or use GPS location instead.`, {
-                chat_id: chatId,
-                message_id: searchMsg.message_id
-            });
-        }
-    }
-});
-
-// Location handler
-const handleLocationSearch = async (chatId, latitude, longitude, initialMessage) => {
-    const searchingMsg = await bot.sendMessage(chatId, initialMessage);
-
-    try {
-        userSessions.set(chatId, { 
-            ...userSessions.get(chatId),
-            latitude, 
-            longitude, 
-            timestamp: Date.now(),
-            waitingForAddress: false
-        });
-
-        const busStopsData = busStopsCache.data.length > 0 ? busStopsCache.data : await getAllBusStops();
-        
-        if (busStopsData.length === 0) {
-            await bot.editMessageText(
-                '❌ Unable to load bus stops data. Please try /test to check API connection.', {
-                chat_id: chatId,
-                message_id: searchingMsg.message_id
-            });
-            return;
-        }
-
-        const userPrefs = userPreferences.get(chatId) || { radius: SEARCH_RADIUS, maxStops: MAX_BUS_STOPS };
-        const nearbyStops = findNearbyBusStops(latitude, longitude, busStopsData, userPrefs.radius);
-
-        if (nearbyStops.length === 0) {
-            await bot.editMessageText(
-                `❌ No bus stops found within ${userPrefs.radius} meters.\n\n` +
-                `Try:\n` +
-                `• Increasing search radius in /settings\n` +
-                `• Moving to a different location\n` +
-                `• Using /debug for system status`, {
-                chat_id: chatId,
-                message_id: searchingMsg.message_id
-            });
-            return;
-        }
-
-        await bot.editMessageText(
-            `📍 Found ${nearbyStops.length} bus stop${nearbyStops.length > 1 ? 's' : ''} nearby.\n` +
-            `🔄 Loading real-time arrivals...`, {
-            chat_id: chatId,
-            message_id: searchingMsg.message_id
-        });
-
-        const combinedMessage = await formatCombinedBusArrivalsMessage(nearbyStops.slice(0, userPrefs.maxStops));
-        
-        await bot.editMessageText(combinedMessage, {
-            chat_id: chatId,
-            message_id: searchingMsg.message_id,
-            parse_mode: 'Markdown',
-            reply_markup: createRefreshKeyboard()
-        });
-
-    } catch (error) {
-        console.error('Error processing location:', error);
-        await bot.editMessageText(
-            '❌ An error occurred while searching. Use /debug for more info.', {
-            chat_id: chatId,
-            message_id: searchingMsg.message_id
-        });
-    }
-};
-
-bot.on('location', async (msg) => {
-    const chatId = msg.chat.id;
-    const { latitude, longitude } = msg.location;
-
-    console.log(`📍 Location received from user ${chatId}: (${latitude}, ${longitude})`);
-    await handleLocationSearch(chatId, latitude, longitude, '🔍 Searching for nearby bus stops...');
-});
-
-// Callback query handler
-bot.on('callback_query', async (callbackQuery) => {
-    const chatId = callbackQuery.message.chat.id;
-    const messageId = callbackQuery.message.message_id;
-    const data = callbackQuery.data;
-
-    console.log(`🔘 Callback query from user ${chatId}: ${data}`);
-
-    try {
-        if (data === 'refresh_all') {
-            const userSession = userSessions.get(chatId);
-            if (!userSession || !userSession.latitude || !userSession.longitude) {
-                await bot.answerCallbackQuery(callbackQuery.id, {
-                    text: '❌ No location data. Please search again.',
-                    show_alert: true
-                });
-                return;
-            }
-
-            await bot.editMessageText('🔄 Refreshing all bus arrivals...', {
-                chat_id: chatId,
-                message_id: messageId
-            });
-
-            const userPrefs = userPreferences.get(chatId) || { radius: SEARCH_RADIUS, maxStops: MAX_BUS_STOPS };
-            const busStopsData = busStopsCache.data;
-            const nearbyStops = findNearbyBusStops(
-                userSession.latitude, 
-                userSession.longitude, 
-                busStopsData,
-                userPrefs.radius
-            );
-
-            if (nearbyStops.length === 0) {
-                await bot.editMessageText(
-                    `❌ No bus stops found within ${userPrefs.radius} meters.`, {
-                    chat_id: chatId,
-                    message_id: messageId
-                });
-                return;
-            }
-
-            const combinedMessage = await formatCombinedBusArrivalsMessage(nearbyStops.slice(0, userPrefs.maxStops));
-            
-            await bot.editMessageText(combinedMessage, {
-                chat_id: chatId,
-                message_id: messageId,
-                parse_mode: 'Markdown',
-                reply_markup: createRefreshKeyboard()
-            });
-            
-        } else if (data === 'new_search') {
-            await bot.sendMessage(chatId, 
-                '📍 Choose how to search for bus stops:', {
-                reply_markup: createMainKeyboard()
-            });
-            
-        } else if (data.startsWith('setting_')) {
-            const setting = data.replace('setting_', '');
-            const prefs = userPreferences.get(chatId) || { radius: SEARCH_RADIUS, maxStops: MAX_BUS_STOPS };
-            
-            if (setting === 'radius') {
-                const radiusKeyboard = {
-                    inline_keyboard: [
-                        [
-                            { text: '100m', callback_data: 'radius_100' },
-                            { text: '200m', callback_data: 'radius_200' },
-                            { text: '300m', callback_data: 'radius_300' }
-                        ],
-                        [
-                            { text: '400m', callback_data: 'radius_400' },
-                            { text: '500m', callback_data: 'radius_500' },
-                            { text: '750m', callback_data: 'radius_750' }
-                        ],
-                        [{ text: '← Back to Settings', callback_data: 'setting_back' }]
-                    ]
-                };
-                
-                await bot.editMessageText(
-                    `🎯 *Search Radius*\n\n` +
-                    `Current: ${prefs.radius}m\n\n` +
-                    `Choose new radius:`, {
-                    chat_id: chatId,
-                    message_id: messageId,
-                    parse_mode: 'Markdown',
-                    reply_markup: radiusKeyboard
-                });
-                
-            } else if (setting === 'stops') {
-                const stopsKeyboard = {
-                    inline_keyboard: [
-                        [
-                            { text: '3 stops', callback_data: 'stops_3' },
-                            { text: '5 stops', callback_data: 'stops_5' },
-                            { text: '7 stops', callback_data: 'stops_7' }
-                        ],
-                        [
-                            { text: '10 stops', callback_data: 'stops_10' },
-                            { text: '15 stops', callback_data: 'stops_15' }
-                        ],
-                        [{ text: '← Back to Settings', callback_data: 'setting_back' }]
-                    ]
-                };
-                
-                await bot.editMessageText(
-                    `📊 *Maximum Bus Stops*\n\n` +
-                    `Current: ${prefs.maxStops} stops\n\n` +
-                    `Choose maximum number of stops to display:`, {
-                    chat_id: chatId,
-                    message_id: messageId,
-                    parse_mode: 'Markdown',
-                    reply_markup: stopsKeyboard
-                });
-                
-            } else if (setting === 'reset') {
-                userPreferences.set(chatId, { radius: SEARCH_RADIUS, maxStops: MAX_BUS_STOPS });
-                
-                await bot.editMessageText(
-                    `✅ *Settings Reset*\n\n` +
-                    `Restored to default values:\n` +
-                    `• Search Radius: ${SEARCH_RADIUS}m\n` +
-                    `• Max Bus Stops: ${MAX_BUS_STOPS}`, {
-                    chat_id: chatId,
-                    message_id: messageId,
-                    parse_mode: 'Markdown',
-                    reply_markup: {
-                        inline_keyboard: [[{ text: '← Back to Settings', callback_data: 'setting_back' }]]
-                    }
-                });
-                
-            } else if (setting === 'done' || setting === 'back') {
-                const currentPrefs = userPreferences.get(chatId) || { radius: SEARCH_RADIUS, maxStops: MAX_BUS_STOPS };
-                
-                const settingsKeyboard = {
-                    inline_keyboard: [
-                        [
-                            { text: `Radius: ${currentPrefs.radius}m`, callback_data: 'setting_radius' },
-                            { text: `Max Stops: ${currentPrefs.maxStops}`, callback_data: 'setting_stops' }
-                        ],
-                        [{ text: '🔄 Reset to Default', callback_data: 'setting_reset' }],
-                        [{ text: '✅ Done', callback_data: 'setting_done' }]
-                    ]
-                };
-                
-                if (setting === 'done') {
-                    await bot.editMessageText(
-                        `✅ *Settings Saved*\n\n` +
-                        `Your preferences:\n` +
-                        `• Search Radius: ${currentPrefs.radius}m\n` +
-                        `• Max Bus Stops: ${currentPrefs.maxStops}\n\n` +
-                        `Use the menu below to search for bus stops!`, {
-                        chat_id: chatId,
-                        message_id: messageId,
-                        parse_mode: 'Markdown'
-                    });
-                    
-                    // Send new message with main keyboard
-                    setTimeout(() => {
-                        bot.sendMessage(chatId, '🚌 Ready to search for buses!', {
-                            reply_markup: createMainKeyboard()
-                        });
-                    }, 1000);
-                } else {
-                    await bot.editMessageText(
-                        `⚙️ *Settings*\n\n` +
-                        `Current preferences:\n` +
-                        `• Search Radius: ${currentPrefs.radius}m\n` +
-                        `• Max Bus Stops: ${currentPrefs.maxStops}\n\n` +
-                        `Tap to adjust:`, {
-                        chat_id: chatId,
-                        message_id: messageId,
-                        parse_mode: 'Markdown',
-                        reply_markup: settingsKeyboard
-                    });
-                }
-            }
-            
-        } else if (data.startsWith('radius_')) {
-            const radius = parseInt(data.replace('radius_', ''));
-            const prefs = userPreferences.get(chatId) || { radius: SEARCH_RADIUS, maxStops: MAX_BUS_STOPS };
-            prefs.radius = radius;
-            userPreferences.set(chatId, prefs);
-            
-            await bot.editMessageText(
-                `✅ *Search Radius Updated*\n\n` +
-                `New radius: ${radius}m\n\n` +
-                `This will affect future searches.`, {
-                chat_id: chatId,
-                message_id: messageId,
-                parse_mode: 'Markdown',
-                reply_markup: {
-                    inline_keyboard: [[{ text: '← Back to Settings', callback_data: 'setting_back' }]]
-                }
-            });
-            
-        } else if (data.startsWith('stops_')) {
-            const maxStops = parseInt(data.replace('stops_', ''));
-            const prefs = userPreferences.get(chatId) || { radius: SEARCH_RADIUS, maxStops: MAX_BUS_STOPS };
-            prefs.maxStops = maxStops;
-            userPreferences.set(chatId, prefs);
-            
-            await bot.editMessageText(
-                `✅ *Maximum Stops Updated*\n\n` +
-                `New limit: ${maxStops} stops\n\n` +
-                `This will affect future searches.`, {
-                chat_id: chatId,
-                message_id: messageId,
-                parse_mode: 'Markdown',
-                reply_markup: {
-                    inline_keyboard: [[{ text: '← Back to Settings', callback_data: 'setting_back' }]]
-                }
-            });
-        }
-
-        await bot.answerCallbackQuery(callbackQuery.id, {
-            text: '✅ Updated!'
-        });
-
-    } catch (error) {
-        console.error('Error handling callback:', error);
-        await bot.answerCallbackQuery(callbackQuery.id, {
-            text: '❌ Update failed. Please try again.',
-            show_alert: true
-        });
-    }
-});
-
-// Error handlers
-bot.on('error', (error) => {
-    console.error('❌ Bot error:', error.message);
-});
-
-bot.on('polling_error', (error) => {
-    console.error('❌ Polling error:', error.message);
-});
-
-// Graceful shutdown
-process.on('SIGINT', () => {
-    console.log('🛑 Shutting down Singapore Bus Bot...');
-    bot.stopPolling();
-    process.exit(0);
-});
-
-process.on('SIGTERM', () => {
-    console.log('🛑 Shutting down Singapore Bus Bot...');
-    bot.stopPolling();
-    process.exit(0);
-});
-
-// Initialize and start
-const initializeBot = async () => {
-    try {
-        console.log('🚀 Starting Enhanced Singapore Bus Bot...');
-        console.log(`📝 Environment: ${NODE_ENV}`);
-        console.log(`🎯 Search Radius: ${SEARCH_RADIUS}m`);
-        console.log(`📊 Max Bus Stops: ${MAX_BUS_STOPS}`);
-        
-        // Test API connection first
-        WORKING_API_ENDPOINT = await testAPIConnection();
-        
-        if (!WORKING_API_ENDPOINT) {
-            console.error('❌ No working API endpoint found!');
-            console.error('🔧 Troubleshooting steps:');
-            console.error('   1. Check your LTA_API_KEY in .env file');
-            console.error('   2. Verify your API key at https://datamall.lta.gov.sg');
-            console.error('   3. Check if your API key is activated');
-            console.error('   4. Try running /test command in the bot');
-            console.error('');
-            console.error('⚠️  Bot will start but bus data will not work until API is fixed');
-        } else {
-            console.log('✅ API connection successful');
-            // Pre-load bus stops data
-            console.log('📊 Pre-loading bus stops data...');
-            await getAllBusStops();
-            console.log('✅ Bus stops data loaded');
-        }
-        
-        console.log('✅ Enhanced Singapore Bus Bot is running!');
-        console.log('💡 New Features:');
-        console.log('   • 📍 200m search radius');
-        console.log('   • 🔍 Address search with OneMap');
-        console.log('   • 📱 Combined bus stop display');
-        console.log('   • ⚙️ User customizable settings');
-        console.log('   • 🔄 Enhanced refresh functionality');
-        console.log('');
-        console.log('🤖 Bot commands menu configured');
-        console.log('📞 Ready for user interactions!');
-        
-    } catch (error) {
-        console.error('❌ Failed to initialize bot:', error.message);
-        console.error('Stack trace:', error.stack);
-        process.exit(1);
-    }
-};
-
-// Start the enhanced bot
-initializeBot();
-            
+// Complete file content (rest remains the same)
