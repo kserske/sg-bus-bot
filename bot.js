@@ -28,8 +28,6 @@ bot.setMyCommands([
     { command: 'help', description: 'Show help and usage instructions' },
     { command: 'location', description: 'Share location to find nearby bus stops' },
     { command: 'search', description: 'Search by typing address or place name' },
-    { command: 'debug', description: 'Show system status and debug info' },
-    { command: 'test', description: 'Test API connection' },
     { command: 'settings', description: 'Adjust search radius and preferences' }
 ]);
 
@@ -628,8 +626,6 @@ bot.onText(/\/help/, async (msg) => {
         `• /location - Request location sharing\n` +
         `• /search - Search by address\n` +
         `• /settings - Adjust preferences\n` +
-        `• /debug - System status\n` +
-        `• /test - Test API connection\n\n` +
         `*Features:*\n` +
         `📍 Share your GPS location for instant results\n` +
         `🔍 Search by typing any Singapore address\n` +
