@@ -336,7 +336,7 @@ const formatCombinedBusArrivalsMessage = async (nearbyStops) => {
     
     for (const [index, busStop] of nearbyStops.entries()) {
         combinedMessage += `📍 *${busStop.Description}*\n`;
-        combinedMessage += `🏷️ Stop: ${busStop.BusStopCode} • 📏 ${busStop.distance}m away\n`;
+        combinedMessage += `🏷️ Stop: ${busStop.BusStopCode} • ${busStop.distance}m away\n`;
         
         try {
             const arrivalsData = await getBusArrivals(busStop.BusStopCode);
@@ -369,11 +369,8 @@ const formatCombinedBusArrivalsMessage = async (nearbyStops) => {
                         const load1 = formatLoad(service.NextBus?.Load);
                         const load2 = formatLoad(service.NextBus2?.Load);
                         
-                        // Show monitored status for debugging
-                        const isRealTime = service.NextBus?.Monitored === 1 ? '📡' : '📅';
-
                         if (nextBus !== 'No data') {
-                            combinedMessage += `🚍 ${busNumber}: ${load1} ${nextBus} ${isRealTime}`;
+                            combinedMessage += `🚍 ${busNumber}: ${load1} ${nextBus}`;
                             if (nextBus2 !== 'No data') {
                                 combinedMessage += ` • ${load2} ${nextBus2}`;
                             }
@@ -393,7 +390,6 @@ const formatCombinedBusArrivalsMessage = async (nearbyStops) => {
     }
     
     combinedMessage += '\n🟢 Seats Available • 🟡 Standing • 🔴 Limited Standing';
-    combinedMessage += '\n📡 Real-time • 📅 Scheduled';
     combinedMessage += `\n\n🔄 Last updated: ${new Date().toLocaleTimeString()}`;
     
     return combinedMessage;
