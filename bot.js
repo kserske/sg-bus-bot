@@ -29,6 +29,8 @@ bot.setMyCommands([
     { command: 'location', description: 'Share location to find nearby bus stops' },
     { command: 'search', description: 'Search by typing address or place name' },
     { command: 'busstop', description: 'Search by bus stop number (e.g. 01012)' },
+    { command: 'debug', description: 'Show system status and debug info' },
+    { command: 'test', description: 'Test API connection' },
     { command: 'settings', description: 'Adjust search radius and preferences' }
 ]);
 
@@ -387,6 +389,7 @@ const formatSingleBusStopMessage = async (busStopCode, busStopName = null) => {
         return `🚏 *Bus Stop ${busStopCode}*\n\n❌ Error loading arrivals (API issue)`;
     }
 };
+
 const formatCombinedBusArrivalsMessage = async (nearbyStops) => {
     let combinedMessage = `🚌 *Bus Arrivals (${nearbyStops.length} stops within ${SEARCH_RADIUS}m)*\n\n`;
     
@@ -639,6 +642,45 @@ const createRefreshKeyboard = () => ({
     ]
 });
 
+// FIXED: Settings function extracted to be reusable
+const showSettingsMenu = async (chatId, messageId = null) => {
+    const prefs = userPreferences.get(chatId) || { radius: SEARCH_RADIUS, maxStops: MAX_BUS_STOPS };
+    
+    const settingsKeyboard = {
+        inline_keyboard: [
+            [
+                { text: `Radius: ${prefs.radius}m`, callback_data: 'setting_radius' },
+                { text: `Max Stops: ${prefs.maxStops}`, callback_data: 'setting_stops' }
+            ],
+            [{ text: '🔄 Reset to Default', callback_data: 'setting_reset' }],
+            [{ text: '✅ Done', callback_data: 'setting_done' }]
+        ]
+    };
+    
+    const settingsMessage = 
+        `⚙️ *Settings*\n\n` +
+        `Current preferences:\n` +
+        `• Search Radius: ${prefs.radius}m\n` +
+        `• Max Bus Stops: ${prefs.maxStops}\n\n` +
+        `Tap to adjust:`;
+    
+    if (messageId) {
+        // Edit existing message
+        await bot.editMessageText(settingsMessage, {
+            chat_id: chatId,
+            message_id: messageId,
+            parse_mode: 'Markdown',
+            reply_markup: settingsKeyboard
+        });
+    } else {
+        // Send new message
+        await bot.sendMessage(chatId, settingsMessage, {
+            parse_mode: 'Markdown',
+            reply_markup: settingsKeyboard
+        });
+    }
+};
+
 // Bot Commands
 
 bot.onText(/\/start/, async (msg) => {
@@ -679,6 +721,8 @@ bot.onText(/\/help/, async (msg) => {
         `• /location - Request location sharing\n` +
         `• /search - Search by address\n` +
         `• /settings - Adjust preferences\n` +
+        `• /debug - System status\n` +
+        `• /test - Test API connection\n\n` +
         `*Features:*\n` +
         `📍 Share your GPS location for instant results\n` +
         `🔍 Search by typing any Singapore address\n` +
@@ -769,32 +813,10 @@ bot.onText(/\/busstop/, async (msg) => {
     });
 });
 
+// FIXED: Settings command now uses the reusable function
 bot.onText(/\/settings/, async (msg) => {
     const chatId = msg.chat.id;
-    const prefs = userPreferences.get(chatId) || { radius: SEARCH_RADIUS, maxStops: MAX_BUS_STOPS };
-    
-    const settingsKeyboard = {
-        inline_keyboard: [
-            [
-                { text: `Radius: ${prefs.radius}m`, callback_data: 'setting_radius' },
-                { text: `Max Stops: ${prefs.maxStops}`, callback_data: 'setting_stops' }
-            ],
-            [{ text: '🔄 Reset to Default', callback_data: 'setting_reset' }],
-            [{ text: '✅ Done', callback_data: 'setting_done' }]
-        ]
-    };
-    
-    await bot.sendMessage(chatId, 
-        `⚙️ *Settings*\n\n` +
-        `Current preferences:\n` +
-        `• Search Radius: ${prefs.radius}m\n` +
-        `• Max Bus Stops: ${prefs.maxStops}\n\n` +
-        `Tap to adjust:`, 
-        { 
-            parse_mode: 'Markdown',
-            reply_markup: settingsKeyboard
-        }
-    );
+    await showSettingsMenu(chatId);
 });
 
 // Enhanced debug command with more diagnostic info
@@ -856,17 +878,17 @@ bot.onText(/\/test/, async (msg) => {
     }
 });
 
-// Enhanced text message handler with better address search
+// FIXED: Enhanced text message handler with better logic for bus stop codes
 bot.on('text', async (msg) => {
     const chatId = msg.chat.id;
-    const text = msg.text;
+    const text = msg.text?.trim();
     
-    // Skip if it's a command
-    if (text.startsWith('/')) return;
+    // Skip if it's a command or empty
+    if (!text || text.startsWith('/')) return;
     
-    const session = userSessions.get(chatId);
+    const session = userSessions.get(chatId) || {};
     
-    // Handle button presses
+    // Handle button presses first
     if (text === '🔍 Search Address') {
         await bot.sendMessage(chatId, 
             `🔍 *Enhanced Address Search*\n\n` +
@@ -910,60 +932,71 @@ bot.on('text', async (msg) => {
         return;
     }
     
-    if (text === '🔄 Refresh' && session && session.latitude && session.longitude) {
+    if (text === '🔄 Refresh' && session.latitude && session.longitude) {
         await handleLocationSearch(chatId, session.latitude, session.longitude, 'Refreshing bus arrivals...');
         return;
     }
     
+    // FIXED: Settings button now calls the reusable function directly
     if (text === '⚙️ Settings') {
-        // Trigger the /settings command
-        const settingsMsg = { ...msg, text: '/settings' };
-        const prefs = userPreferences.get(chatId) || { radius: SEARCH_RADIUS, maxStops: MAX_BUS_STOPS };
-        
-        const settingsKeyboard = {
-            inline_keyboard: [
-                [
-                    { text: `Radius: ${prefs.radius}m`, callback_data: 'setting_radius' },
-                    { text: `Max Stops: ${prefs.maxStops}`, callback_data: 'setting_stops' }
-                ],
-                [{ text: '🔄 Reset to Default', callback_data: 'setting_reset' }],
-                [{ text: '✅ Done', callback_data: 'setting_done' }]
-            ]
-        };
-        
-        await bot.sendMessage(chatId, 
-            `⚙️ *Settings*\n\n` +
-            `Current preferences:\n` +
-            `• Search Radius: ${prefs.radius}m\n` +
-            `• Max Bus Stops: ${prefs.maxStops}\n\n` +
-            `Tap to adjust:`, 
-            { 
-                parse_mode: 'Markdown',
-                reply_markup: settingsKeyboard
-            }
-        );
+        await showSettingsMenu(chatId);
         return;
     }
     
     if (text === '❓ Help') {
-        bot.emit('message', { ...msg, text: '/help' });
+        // Reuse the help command handler
+        const helpMessage = 
+            `❓ *Singapore Bus Bot Help*\n\n` +
+            `*Available Commands:*\n` +
+            `• /start - Start the bot\n` +
+            `• /help - Show this help message\n` +
+            `• /location - Request location sharing\n` +
+            `• /search - Search by address\n` +
+            `• /settings - Adjust preferences\n` +
+            `• /debug - System status\n` +
+            `• /test - Test API connection\n\n` +
+            `*Features:*\n` +
+            `📍 Share your GPS location for instant results\n` +
+            `🔍 Search by typing any Singapore address\n` +
+            `📱 All nearby stops shown in one message\n` +
+            `🔄 Real-time arrival updates\n` +
+            `⚙️ Customizable search radius\n\n` +
+            `*Tips:*\n` +
+            `• For address search, be specific (e.g., "Orchard Road MRT")\n` +
+            `• Bus timings are updated every 30 seconds\n` +
+            `• Load indicators: 🟢 Seats, 🟡 Standing, 🔴 Limited\n\n` +
+            `Need more help? Contact support or try /debug for troubleshooting.`;
+
+        await bot.sendMessage(chatId, helpMessage, { 
+            parse_mode: 'Markdown',
+            reply_markup: createMainKeyboard()
+        });
         return;
     }
     
-    // Handle address search with enhanced feedback
-    if (session && session.waitingForBusStop) {
-        const busStopCode = text.trim();
+    // FIXED: Better handling of bus stop code validation and state management
+    if (session.waitingForBusStop) {
+        console.log(`🚏 Processing bus stop code: "${text}" for user ${chatId}`);
         
-        // Validate bus stop code format (should be 5 digits)
+        // More flexible validation - accept 4-5 digits with optional leading zeros
+        const cleanedCode = text.replace(/\D/g, ''); // Remove non-digits
+        let busStopCode = cleanedCode;
+        
+        // Pad with leading zeros if needed (common for Singapore bus stops)
+        if (cleanedCode.length === 4) {
+            busStopCode = '0' + cleanedCode;
+        }
+        
         if (!/^\d{5}$/.test(busStopCode)) {
             await bot.sendMessage(chatId, 
                 `❌ **Invalid bus stop code format**\n\n` +
-                `Bus stop codes should be exactly 5 digits.\n\n` +
-                `📝 **Examples of valid codes:**\n` +
-                `• 01012 (not 1012)\n` +
-                `• 43009 (not 43009)\n` +
+                `Please enter a valid bus stop code (4-5 digits).\n\n` +
+                `📝 **Examples:**\n` +
+                `• 01012 or 1012\n` +
+                `• 43009\n` +
                 `• 28009\n\n` +
-                `Please try again with a 5-digit bus stop code:`, 
+                `You entered: "${text}"\n` +
+                `Please try again:`, 
                 { parse_mode: 'Markdown' }
             );
             return;
@@ -981,17 +1014,19 @@ bot.on('text', async (msg) => {
                 const busStop = busStopsCache.data.find(stop => stop.BusStopCode === busStopCode);
                 if (busStop) {
                     busStopName = busStop.Description;
+                    console.log(`✅ Found bus stop name: ${busStopName}`);
+                } else {
+                    console.log(`⚠️ Bus stop ${busStopCode} not found in cache`);
                 }
             }
             
             const busMessage = await formatSingleBusStopMessage(busStopCode, busStopName);
             
-            // Clear the bus stop search state
-            userSessions.set(chatId, { 
-                ...session, 
-                waitingForBusStop: false,
-                lastBusStopCode: busStopCode
-            });
+            // FIXED: Clear the bus stop search state properly
+            const updatedSession = { ...session };
+            delete updatedSession.waitingForBusStop;
+            updatedSession.lastBusStopCode = busStopCode;
+            userSessions.set(chatId, updatedSession);
             
             await bot.editMessageText(busMessage, {
                 chat_id: chatId,
@@ -1019,10 +1054,16 @@ bot.on('text', async (msg) => {
                 message_id: searchMsg.message_id,
                 parse_mode: 'Markdown'
             });
+            
+            // Keep the session state so user can try again
         }
         return;
     }
-    if (session && session.waitingForAddress) {
+    
+    // Handle address search
+    if (session.waitingForAddress) {
+        console.log(`🔍 Processing address search: "${text}" for user ${chatId}`);
+        
         const searchMsg = await bot.sendMessage(chatId, 
             `🔍 Searching for "${text}"...\n` +
             `⏳ Checking multiple location databases...`
@@ -1043,15 +1084,14 @@ bot.on('text', async (msg) => {
                     parse_mode: 'Markdown'
                 });
                 
-                // Clear the address search state
-                userSessions.set(chatId, { 
-                    ...session, 
-                    waitingForAddress: false,
-                    latitude: location.latitude,
-                    longitude: location.longitude,
-                    searchedAddress: location.address,
-                    provider: location.provider
-                });
+                // FIXED: Clear the address search state properly
+                const updatedSession = { ...session };
+                delete updatedSession.waitingForAddress;
+                updatedSession.latitude = location.latitude;
+                updatedSession.longitude = location.longitude;
+                updatedSession.searchedAddress = location.address;
+                updatedSession.provider = location.provider;
+                userSessions.set(chatId, updatedSession);
                 
                 await sleep(1000); // Brief pause for user to see the found location
                 await bot.deleteMessage(chatId, searchMsg.message_id);
@@ -1071,7 +1111,7 @@ bot.on('text', async (msg) => {
                     `• "Causeway Point Shopping Centre"\n` +
                     `• "Woodlands MRT"\n` +
                     `• "Jurong Point Mall"\n\n` +
-                    `💡 Or try a different location name!`, {
+                    `💡 Try a different location name or be more specific!`, {
                     chat_id: chatId,
                     message_id: searchMsg.message_id,
                     parse_mode: 'Markdown'
@@ -1091,6 +1131,29 @@ bot.on('text', async (msg) => {
                 parse_mode: 'Markdown'
             });
         }
+        return;
+    }
+    
+    // If no special state, check if it looks like a bus stop code or address
+    const cleanedInput = text.replace(/\D/g, '');
+    if (cleanedInput.length >= 4 && cleanedInput.length <= 5) {
+        // Looks like a bus stop code, prompt user
+        await bot.sendMessage(chatId,
+            `🤔 "${text}" looks like a bus stop code!\n\n` +
+            `Would you like me to search for bus arrivals at this stop?\n\n` +
+            `Click "🚏 Bus Stop Number" to search by stop code, or\n` +
+            `Click "🔍 Search Address" to search by location name.`,
+            { reply_markup: createMainKeyboard() }
+        );
+    } else {
+        // Assume it's an address search
+        await bot.sendMessage(chatId,
+            `🤔 "${text}" looks like a location!\n\n` +
+            `Would you like me to search for nearby bus stops?\n\n` +
+            `Click "🔍 Search Address" to search by location, or\n` +
+            `Click "🚏 Bus Stop Number" if this is actually a bus stop code.`,
+            { reply_markup: createMainKeyboard() }
+        );
     }
 });
 
@@ -1099,12 +1162,12 @@ const handleLocationSearch = async (chatId, latitude, longitude, initialMessage)
     const searchingMsg = await bot.sendMessage(chatId, initialMessage);
 
     try {
+        const currentSession = userSessions.get(chatId) || {};
         userSessions.set(chatId, { 
-            ...userSessions.get(chatId),
+            ...currentSession,
             latitude, 
             longitude, 
-            timestamp: Date.now(),
-            waitingForAddress: false
+            timestamp: Date.now()
         });
 
         const busStopsData = busStopsCache.data.length > 0 ? busStopsCache.data : await getAllBusStops();
@@ -1339,51 +1402,30 @@ bot.on('callback_query', async (callbackQuery) => {
                     }
                 });
                 
-            } else if (setting === 'done' || setting === 'back') {
+            } else if (setting === 'done') {
                 const currentPrefs = userPreferences.get(chatId) || { radius: SEARCH_RADIUS, maxStops: MAX_BUS_STOPS };
                 
-                const settingsKeyboard = {
-                    inline_keyboard: [
-                        [
-                            { text: `Radius: ${currentPrefs.radius}m`, callback_data: 'setting_radius' },
-                            { text: `Max Stops: ${currentPrefs.maxStops}`, callback_data: 'setting_stops' }
-                        ],
-                        [{ text: '🔄 Reset to Default', callback_data: 'setting_reset' }],
-                        [{ text: '✅ Done', callback_data: 'setting_done' }]
-                    ]
-                };
+                await bot.editMessageText(
+                    `✅ *Settings Saved*\n\n` +
+                    `Your preferences:\n` +
+                    `• Search Radius: ${currentPrefs.radius}m\n` +
+                    `• Max Bus Stops: ${currentPrefs.maxStops}\n\n` +
+                    `Use the menu below to search for bus stops!`, {
+                    chat_id: chatId,
+                    message_id: messageId,
+                    parse_mode: 'Markdown'
+                });
                 
-                if (setting === 'done') {
-                    await bot.editMessageText(
-                        `✅ *Settings Saved*\n\n` +
-                        `Your preferences:\n` +
-                        `• Search Radius: ${currentPrefs.radius}m\n` +
-                        `• Max Bus Stops: ${currentPrefs.maxStops}\n\n` +
-                        `Use the menu below to search for bus stops!`, {
-                        chat_id: chatId,
-                        message_id: messageId,
-                        parse_mode: 'Markdown'
+                // Send new message with main keyboard
+                setTimeout(() => {
+                    bot.sendMessage(chatId, '🚌 Ready to search for buses!', {
+                        reply_markup: createMainKeyboard()
                     });
-                    
-                    // Send new message with main keyboard
-                    setTimeout(() => {
-                        bot.sendMessage(chatId, '🚌 Ready to search for buses!', {
-                            reply_markup: createMainKeyboard()
-                        });
-                    }, 1000);
-                } else {
-                    await bot.editMessageText(
-                        `⚙️ *Settings*\n\n` +
-                        `Current preferences:\n` +
-                        `• Search Radius: ${currentPrefs.radius}m\n` +
-                        `• Max Bus Stops: ${currentPrefs.maxStops}\n\n` +
-                        `Tap to adjust:`, {
-                        chat_id: chatId,
-                        message_id: messageId,
-                        parse_mode: 'Markdown',
-                        reply_markup: settingsKeyboard
-                    });
-                }
+                }, 1000);
+                
+            } else if (setting === 'back') {
+                // Use the reusable settings function
+                await showSettingsMenu(chatId, messageId);
             }
             
         } else if (data.startsWith('radius_')) {
@@ -1493,6 +1535,8 @@ const initializeBot = async () => {
         console.log('   • 📱 Combined bus stop display');
         console.log('   • ⚙️ User customizable settings');
         console.log('   • 🔄 Enhanced refresh functionality');
+        console.log('   • 🚏 Fixed bus stop number search');
+        console.log('   • ⚙️ Fixed settings menu button');
         console.log('');
         console.log('🤖 Bot commands menu configured');
         console.log('📞 Ready for user interactions!');
@@ -1506,3 +1550,4 @@ const initializeBot = async () => {
 
 // Start the enhanced bot
 initializeBot();
+    
