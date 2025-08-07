@@ -949,8 +949,6 @@ bot.on('text', async (msg) => {
             `• /location - Request location sharing\n` +
             `• /search - Search by address\n` +
             `• /settings - Adjust preferences\n` +
-            `• /debug - System status\n` +
-            `• /test - Test API connection\n\n` +
             `*Features:*\n` +
             `📍 Share your GPS location for instant results\n` +
             `🔍 Search by typing any Singapore address\n` +
@@ -961,7 +959,7 @@ bot.on('text', async (msg) => {
             `• For address search, be specific (e.g., "Orchard Road MRT")\n` +
             `• Bus timings are updated every 30 seconds\n` +
             `• Load indicators: 🟢 Seats, 🟡 Standing, 🔴 Limited\n\n` +
-            `Need more help? Contact support or try /debug for troubleshooting.`;
+            `Need more help? Contact RandomG.`;
 
         await bot.sendMessage(chatId, helpMessage, { 
             parse_mode: 'Markdown',
@@ -1547,4 +1545,5 @@ const initializeBot = async () => {
 // Start the enhanced bot
 initializeBot();
     
+
 
